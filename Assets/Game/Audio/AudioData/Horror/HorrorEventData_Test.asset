@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 778a9f9910b168f4c8b474c7ac99517e, type: 3}
+  m_Name: HorrorEventData_Test
+  m_EditorClassIdentifier: Assembly-CSharp::FourPlayerHorror.Audio.Horror.HorrorEventData
+  eventName: Test Horror
+  sound: {fileID: 11400000, guid: 7007512b89fd5774eb35a1687d4336af, type: 2}
+  useLight: 1
+  lightOffDuration: 0.2

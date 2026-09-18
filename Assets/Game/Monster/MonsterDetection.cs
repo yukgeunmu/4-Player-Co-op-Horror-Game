@@ -5,6 +5,15 @@ using UnityEngine;
 
 namespace FourPlayerHorror.Monster
 {
+    public enum DetectionAudioState
+    {
+        None,
+        Low,
+        Medium,
+        High
+    }
+
+
     public class MonsterDetection : MonoBehaviour
     {
         [Header("Detection")]
@@ -39,6 +48,20 @@ namespace FourPlayerHorror.Monster
         public float DetectionRange => detectionRange;
 
         public float DetectionThreshold => detectionThreshold;
+
+        /// <summary>
+        /// ////////////////////
+        /// </summary>
+
+        private NetworkVariable<DetectionAudioState> detectionAudioState =
+            new NetworkVariable<DetectionAudioState>(
+                DetectionAudioState.None,
+                NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server
+            );
+
+        public DetectionAudioState CurrentDetectionAudioState =>
+            detectionAudioState.Value;
 
 
         private void Update()
@@ -268,6 +291,36 @@ namespace FourPlayerHorror.Monster
             return player != null;
         }
 
+        public bool TryGetHighestGaugePlayer( out ulong playerId, out float gauge)
+        {
+            playerId = default;
+            gauge = 0f;
+
+            foreach (NetworkClient client
+                     in NetworkManager.Singleton.ConnectedClientsList)
+            {
+                NetworkObject playerObject =
+                    client.PlayerObject;
+
+                if (playerObject == null)
+                    continue;
+
+                if (IsPlayerUnavailable(playerObject))
+                    continue;
+
+                float currentGauge =
+                    GetGauge(client.ClientId);
+
+                if (currentGauge <= gauge)
+                    continue;
+
+                gauge = currentGauge;
+                playerId = client.ClientId;
+            }
+
+            return gauge > 0f;
+        }
+
         public bool CanCurrentlyDetect(Transform player)
         {
             if (player == null)
@@ -296,5 +349,6 @@ namespace FourPlayerHorror.Monster
             return playerController.IsDown ||
                    playerController.IsDead;
         }
+
     }
 }

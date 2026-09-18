@@ -1,3 +1,4 @@
+using FourPlayerHorror.Audio;
 using FourPlayerHorror.Player;
 using Unity.Netcode;
 using UnityEngine;
@@ -52,6 +53,29 @@ namespace FourPlayerHorror.Monster
 
         private int stateHash;
 
+        [Header("Audio")]
+        [SerializeField] private AudioData chaseAudio;
+        [SerializeField] private AudioData footstepAudio;
+        [SerializeField] private AudioData attackAudio;
+        [SerializeField] private AudioData detectionLowAudio;
+        [SerializeField] private AudioData detectionMediumAudio;
+        [SerializeField] private AudioData detectionHighAudio;
+        [SerializeField] private AudioData heartbeatAudio;
+
+        [SerializeField] private float footstepInterval = 0.5f;
+
+        [SerializeField] private float heartbeatLowInterval = 1.0f;
+        [SerializeField] private float heartbeatMediumInterval = 0.7f;
+        [SerializeField] private float heartbeatHighInterval = 0.45f;
+
+        private float footstepTimer;
+
+        private float heartbeatTimer;
+
+        private AudioSource chaseAudioSource;
+
+        private AudioSource detectionAudioSource;
+
         // --------------------------------------------------
         // State
         // --------------------------------------------------
@@ -65,7 +89,6 @@ namespace FourPlayerHorror.Monster
 
         private readonly MonsterStateMachine stateMachine =
             new MonsterStateMachine();
-
 
         // --------------------------------------------------
         // Patrol
@@ -98,6 +121,17 @@ namespace FourPlayerHorror.Monster
 
 
         // --------------------------------------------------
+        // Audio
+        // --------------------------------------------------
+
+        private readonly NetworkVariable<DetectionAudioState> detectionAudioState =
+            new NetworkVariable<DetectionAudioState>(
+                DetectionAudioState.None,
+                NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server
+            );
+
+        // --------------------------------------------------
         // Unity
         // --------------------------------------------------
 
@@ -113,8 +147,24 @@ namespace FourPlayerHorror.Monster
 
             if (animator == null)
                 animator = GetComponent<Animator>();
-        }
 
+            chaseAudioSource = gameObject.AddComponent<AudioSource>();
+
+            chaseAudioSource.playOnAwake = false;
+            chaseAudioSource.loop = true;
+            chaseAudioSource.spatialBlend = 1f;
+            chaseAudioSource.rolloffMode = AudioRolloffMode.Linear;
+            chaseAudioSource.minDistance = 5f;
+            chaseAudioSource.maxDistance = 25f;
+
+            detectionAudioSource = gameObject.AddComponent<AudioSource>();
+
+            detectionAudioSource.playOnAwake = false;
+            detectionAudioSource.loop = true;
+            detectionAudioSource.spatialBlend = 0f;
+
+        }
+         
 
         // --------------------------------------------------
         // Network
@@ -125,6 +175,9 @@ namespace FourPlayerHorror.Monster
             base.OnNetworkSpawn();
 
             CurrentState.OnValueChanged += OnStateChanged;
+            detectionAudioState.OnValueChanged += OnDetectionAudioStateChanged;
+
+            ApplyDetectionAudio(detectionAudioState.Value);
 
             // 현재 상태 즉시 반영
             ApplyState(CurrentState.Value);
@@ -139,6 +192,7 @@ namespace FourPlayerHorror.Monster
         public override void OnNetworkDespawn()
         {
             CurrentState.OnValueChanged -= OnStateChanged;
+            detectionAudioState.OnValueChanged -= OnDetectionAudioStateChanged;
 
             base.OnNetworkDespawn();
         }
@@ -150,31 +204,36 @@ namespace FourPlayerHorror.Monster
 
         private void Update()
         {
-            if (!IsServer)
-                return;
-
-            switch (CurrentState.Value)
+            if (IsServer)
             {
-                case MonsterState.Idle:
-                    UpdateIdle();
-                    break;
 
-                case MonsterState.Patrol:
-                    UpdatePatrol();
-                    break;
+                UpdateDetectionAudioState();
 
-                case MonsterState.Chase:
-                    UpdateChase();
-                    break;
+                switch (CurrentState.Value)
+                {
+                    case MonsterState.Idle:
+                        UpdateIdle();
+                        break;
 
-                case MonsterState.Attack:
-                    UpdateAttack();
-                    break;
+                    case MonsterState.Patrol:
+                        UpdatePatrol();
+                        break;
 
-                case MonsterState.Kill:
-                    UpdateKill();
-                    break;
+                    case MonsterState.Chase:
+                        UpdateChase();
+                        break;
+
+                    case MonsterState.Attack:
+                        UpdateAttack();
+                        break;
+
+                    case MonsterState.Kill:
+                        UpdateKill();
+                        break;
+                }
             }
+
+            UpdateHeartbeat();
         }
 
 
@@ -187,6 +246,13 @@ namespace FourPlayerHorror.Monster
             MonsterState newState)
         {
             ApplyState(newState);
+
+            if (newState == MonsterState.Chase ||
+                newState == MonsterState.Attack ||
+                newState == MonsterState.Kill)
+            {
+                StopHeartbeat();
+            }
 
             // State 판단은 Server에서만
             if (!IsServer)
@@ -326,10 +392,12 @@ namespace FourPlayerHorror.Monster
                 return;
             }
 
+            UpdatePatrolFootstep();
+
             // 이동 중
             if (!controller.HasReachedDestination())
                 return;
-
+            
             // 목적지 도착
             controller.Stop();
 
@@ -404,6 +472,7 @@ namespace FourPlayerHorror.Monster
                 {
                     ClearTarget();
                     TryChangeState(MonsterState.Patrol);
+                    StopChaseAudio();
                     return;
                 }
             }
@@ -412,6 +481,7 @@ namespace FourPlayerHorror.Monster
             targetLostTimer = 0f;
 
             controller.Resume();
+            StartChaseAudio();
         }
 
         private void UpdateChase()
@@ -422,6 +492,7 @@ namespace FourPlayerHorror.Monster
                 {
                     ClearTarget();
                     TryChangeState(MonsterState.Patrol);
+                    StopChaseAudio();
                 }
 
                 return;
@@ -437,6 +508,7 @@ namespace FourPlayerHorror.Monster
             if (distance <= attackRange)
             {
                 TryChangeState(MonsterState.Attack);
+                StopChaseAudio();
                 return;
             }
 
@@ -478,6 +550,7 @@ namespace FourPlayerHorror.Monster
             ClearTarget();
 
             TryChangeState(MonsterState.Patrol);
+            StopChaseAudio();
         }
 
         private bool ValidateTarget()
@@ -636,6 +709,8 @@ namespace FourPlayerHorror.Monster
                 stateHash,
                 (int)MonsterState.Attack
             );
+
+            PlayAttackAudio();
         }
 
 
@@ -691,7 +766,7 @@ namespace FourPlayerHorror.Monster
 
 
             // Player Down
-            player.Down();
+            player.SetDown(player.transform.position, player.transform.rotation);
 
 
             // Down 성공 확인
@@ -752,5 +827,243 @@ namespace FourPlayerHorror.Monster
             // 새로운 타겟 없음
             TryChangeState(MonsterState.Patrol);
         }
+
+        private void StartChaseAudio()
+        {
+            if (chaseAudioSource == null)
+                return;
+
+            if (chaseAudio == null || chaseAudio.clip == null)
+                return;
+
+            if (chaseAudioSource.isPlaying)
+                return;
+
+            chaseAudioSource.clip = chaseAudio.clip;
+            chaseAudioSource.volume = chaseAudio.volume;
+            chaseAudioSource.pitch = chaseAudio.pitch;
+
+            chaseAudioSource.spatialBlend = 1f;
+            chaseAudioSource.rolloffMode = AudioRolloffMode.Linear;
+            chaseAudioSource.minDistance = chaseAudio.minDistance;
+            chaseAudioSource.maxDistance = chaseAudio.maxDistance;
+
+            chaseAudioSource.loop = true;
+
+            chaseAudioSource.Play();
+        }
+
+        private void StopChaseAudio()
+        {
+            if (chaseAudioSource == null)
+                return;
+
+            if (!chaseAudioSource.isPlaying)
+                return;
+
+            chaseAudioSource.Stop();
+        }
+
+        private void UpdatePatrolFootstep()
+        {
+            if (footstepAudio == null)
+                return;
+
+            footstepTimer += Time.deltaTime;
+
+            if (footstepTimer < footstepInterval)
+                return;
+
+            footstepTimer = 0f;
+
+            if (AudioManager.Instance == null)
+                return;
+
+            AudioManager.Instance.Play3DSFX(
+                footstepAudio,
+                transform.position
+            );
+        }
+
+        private void PlayAttackAudio()
+        {
+            if (AudioManager.Instance == null)
+                return;
+
+            if (attackAudio == null)
+                return;
+
+            AudioManager.Instance.Play3DSFX(
+                attackAudio,
+                transform.position
+            );
+        }
+
+
+        private void UpdateDetectionAudioState()
+        {
+            if (!IsServer)
+                return;
+
+            if (detection == null)
+                return;
+
+            if (!detection.TryGetHighestGaugePlayer(
+                    out ulong playerId,
+                    out float gauge))
+            {
+                detectionAudioState.Value = DetectionAudioState.None;
+                return;
+            }
+
+            float threshold = detection.DetectionThreshold;
+
+            if (threshold <= 0f)
+            {
+                detectionAudioState.Value = DetectionAudioState.None;
+                return;
+            }
+
+            float normalizedGauge = gauge / threshold;
+
+            if (normalizedGauge < 0.3f)
+            {
+                detectionAudioState.Value = DetectionAudioState.None;
+            }
+            else if (normalizedGauge < 0.6f)
+            {
+                detectionAudioState.Value = DetectionAudioState.Low;
+            }
+            else if (normalizedGauge < 0.8f)
+            {
+                detectionAudioState.Value = DetectionAudioState.Medium;
+            }
+            else
+            {
+                detectionAudioState.Value = DetectionAudioState.High;
+            }
+        }
+
+        private void OnDetectionAudioStateChanged(
+                    DetectionAudioState previousState,
+                    DetectionAudioState newState)
+        {
+            ApplyDetectionAudio(newState);
+        }
+
+        private void ApplyDetectionAudio(DetectionAudioState state)
+        {
+            switch (state)
+            {
+                case DetectionAudioState.None:
+                    StopDetectionAudio();
+                    break;
+
+                case DetectionAudioState.Low:
+                    PlayDetectionAudio(detectionLowAudio);
+                    break;
+
+                case DetectionAudioState.Medium:
+                    PlayDetectionAudio(detectionMediumAudio);
+                    break;
+
+                case DetectionAudioState.High:
+                    PlayDetectionAudio(detectionHighAudio);
+                    break;
+            }
+        }
+
+        private void PlayDetectionAudio(AudioData audioData)
+        {
+            if (detectionAudioSource == null)
+                return;
+
+            if (audioData == null || audioData.clip == null)
+                return;
+
+            if (detectionAudioSource.clip == audioData.clip &&
+                detectionAudioSource.isPlaying)
+            {
+                return;
+            }
+
+            detectionAudioSource.Stop();
+
+            detectionAudioSource.clip = audioData.clip;
+            detectionAudioSource.volume = audioData.volume;
+            detectionAudioSource.pitch = audioData.pitch;
+            detectionAudioSource.loop = true;
+
+            detectionAudioSource.Play();
+        }
+
+        private void StopDetectionAudio()
+        {
+            if (detectionAudioSource == null)
+                return;
+
+            if (!detectionAudioSource.isPlaying)
+                return;
+
+            detectionAudioSource.Stop();
+        }
+
+        private void UpdateHeartbeat()
+        {
+            if (heartbeatAudio == null)
+                return;
+
+            if (heartbeatAudio.clip == null)
+                return;
+
+            float interval;
+
+            switch (detectionAudioState.Value)
+            {
+                case DetectionAudioState.Low:
+                    interval = heartbeatLowInterval;
+                    break;
+
+                case DetectionAudioState.Medium:
+                    interval = heartbeatMediumInterval;
+                    break;
+
+                case DetectionAudioState.High:
+                    interval = heartbeatHighInterval;
+                    break;
+
+                case DetectionAudioState.None:
+                default:
+                    heartbeatTimer = 0f;
+                    return;
+            }
+
+            heartbeatTimer -= Time.deltaTime;
+
+            if (heartbeatTimer > 0f)
+                return;
+
+            heartbeatTimer = interval;
+
+            PlayHeartbeat();
+        }
+
+        private void PlayHeartbeat()
+        {
+            if (AudioManager.Instance == null)
+                return;
+
+            if (heartbeatAudio == null)
+                return;
+
+            AudioManager.Instance.PlaySFX(heartbeatAudio);
+        }
+
+        private void StopHeartbeat()
+        {
+            heartbeatTimer = 0f;
+        }
     }
+
+
 }

@@ -1,3 +1,4 @@
+using System;
 using Unity.Netcode;
 using UnityEngine;
 using FourPlayerHorror.Player;
@@ -19,12 +20,14 @@ namespace FourPlayerHorror.Interaction
         public bool IsCompleted =>
             installedFuseCount.Value >= InteractionConst.RequiredFuseCount;
 
+        public event Action<int> OnFuseCountChanged;
+
         public string GetInteractionText()
         {
             if (IsCompleted)
-                return "발전기 작동 완료";
+                return "Complete Generator";
 
-            return $"퓨즈 장착 ({InstalledFuseCount}/{InteractionConst.RequiredFuseCount})";
+            return $"Equip Fuse ({InstalledFuseCount}/{InteractionConst.RequiredFuseCount})";
         }
 
         public void Interact(ulong clientId)
@@ -89,7 +92,7 @@ namespace FourPlayerHorror.Interaction
 
         private void OnInstalledFuseCountChanged(int previousValue,int newValue)
         {
-            Debug.Log( $"Generator progress: " + $"{previousValue} → {newValue}");
+            OnFuseCountChanged?.Invoke(newValue);
 
             if (newValue < InteractionConst.RequiredFuseCount)
                 return;

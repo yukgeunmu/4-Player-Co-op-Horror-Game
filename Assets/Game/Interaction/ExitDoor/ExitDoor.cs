@@ -1,6 +1,8 @@
+using FourPlayerHorror.Core;
+using FourPlayerHorror.Player;
+using System;
 using Unity.Netcode;
 using UnityEngine;
-using FourPlayerHorror.Core;
 
 namespace FourPlayerHorror.Interaction
 {
@@ -15,6 +17,8 @@ namespace FourPlayerHorror.Interaction
 
         public bool IsActivated => isActivated.Value;
 
+        public event Action OnActivated;
+
         private void OnEnable()
         {
             GeneratorCompletedEvent.OnCompleted +=
@@ -27,12 +31,41 @@ namespace FourPlayerHorror.Interaction
                 HandleGeneratorCompleted;
         }
 
+        public override void OnNetworkSpawn()
+        {
+            base.OnNetworkSpawn();
+
+            isActivated.OnValueChanged +=
+                OnActivatedValueChanged;
+
+            if (isActivated.Value)
+            {
+                OnActivatedValueChanged(false, true);
+            }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            isActivated.OnValueChanged -=
+                OnActivatedValueChanged;
+
+            base.OnNetworkDespawn();
+        }
+
+        private void OnActivatedValueChanged(bool previousValue, bool newValue)
+        {
+            if (!previousValue && newValue)
+            {
+                OnActivated?.Invoke();
+            }
+        }
+
         public string GetInteractionText()
         {
             if (!IsActivated)
-                return "출구가 잠겨있다.";
+                return "Close ExitDoor";
 
-            return "탈출하기";
+            return "Escape";
         }
 
         public void Interact(ulong clientId)
@@ -49,13 +82,56 @@ namespace FourPlayerHorror.Interaction
                 return;
             }
 
+            if (NetworkManager.Singleton.ConnectedClients
+                .TryGetValue(clientId, out NetworkClient client) == false)
+            {
+                Debug.LogWarning(
+                    $"Escape failed. Client {clientId} not found."
+                );
+
+                return;
+            }
+
+            if (client.PlayerObject == null)
+            {
+                Debug.LogWarning(
+                    $"Escape failed. PlayerObject for Client {clientId} not found."
+                );
+
+                return;
+            }
+
+            PlayerController player =
+                client.PlayerObject.GetComponent<PlayerController>();
+
+            if (player == null)
+            {
+                Debug.LogWarning(
+                    $"Escape failed. PlayerController for Client {clientId} not found."
+                );
+
+                return;
+            }
+
+            // Normal 상태의 플레이어만 탈출 가능
+            if (player.CurrentState != PlayerState.Normal)
+            {
+                Debug.Log(
+                    $"Client {clientId} cannot escape. " +
+                    $"Current State: {player.CurrentState}"
+                );
+
+                return;
+            }
+
+            // 서버에서 탈출 상태 변경
+            player.SetState(PlayerState.Escaped);
+
             Debug.Log(
-                $"Client {clientId} escaped."
+                $"Client {clientId} escaped successfully."
             );
 
             NotifyEscapeClientRpc(clientId);
-
-            // 다음 단계에서 실제 탈출 처리를 구현한다.
         }
 
         [ClientRpc]

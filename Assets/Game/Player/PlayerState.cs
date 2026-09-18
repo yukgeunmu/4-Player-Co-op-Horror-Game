@@ -2,5 +2,6 @@ public enum PlayerState
 {
     Normal,
     Down,
-    Dead
+    Dead,
+    Escaped
 }

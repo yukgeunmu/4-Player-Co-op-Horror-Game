@@ -19,7 +19,7 @@ GameObject:
   - component: {fileID: 904538595276065532}
   - component: {fileID: 9104620118103399261}
   - component: {fileID: 5407963690247619399}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Monster
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -256,6 +256,17 @@ MonoBehaviour:
   attackRange: 1.8
   attackCooldown: 2
   stateParameterName: State
+  chaseAudio: {fileID: 11400000, guid: 5cee453600d2e4245a594a957ed7b886, type: 2}
+  footstepAudio: {fileID: 11400000, guid: 28c9ffc0631e8524aa74f90eec6da2ed, type: 2}
+  attackAudio: {fileID: 11400000, guid: 32a149de7f2cf6646ac772b4c2cb3130, type: 2}
+  detectionLowAudio: {fileID: 11400000, guid: b809add7bc1b84b4bab66dfac11486ca, type: 2}
+  detectionMediumAudio: {fileID: 11400000, guid: cd0793d0c30cfda4d92db802b92bc587, type: 2}
+  detectionHighAudio: {fileID: 11400000, guid: 7007512b89fd5774eb35a1687d4336af, type: 2}
+  heartbeatAudio: {fileID: 11400000, guid: 5071d70a71e984449a832b6c76501dfd, type: 2}
+  footstepInterval: 0.5
+  heartbeatLowInterval: 1
+  heartbeatMediumInterval: 0.7
+  heartbeatHighInterval: 0.45
   CurrentState:
     UpdateTraits:
       MinSecondsBetweenUpdates: 0
@@ -316,7 +327,7 @@ GameObject:
   - component: {fileID: 4679289420910339104}
   - component: {fileID: 7068545048073658337}
   - component: {fileID: 8975704784070249444}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Cube
   m_TagString: Untagged
   m_Icon: {fileID: 0}

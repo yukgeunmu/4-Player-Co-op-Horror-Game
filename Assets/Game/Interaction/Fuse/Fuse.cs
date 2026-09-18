@@ -8,7 +8,7 @@ namespace FourPlayerHorror.Interaction
     {
         public string GetInteractionText()
         {
-            return "퓨즈 줍기";
+            return "Get Fuse";
         }
 
         public void Interact(ulong clientId)
